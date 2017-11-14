@@ -57,7 +57,7 @@ void preProcess(uchar4 **inputImage, unsigned char **greyImage,
   //copy input array to the GPU
   checkCudaErrors(cudaMemcpy(*d_rgbaImage, *inputImage, sizeof(uchar4) * numPixels, cudaMemcpyHostToDevice));
 
-  d_rgbaImage__ = *d_rgbaImage;
+  d_rgbaImage__ = *d_rgbaImage;                                                                                                                                                                                               
   d_greyImage__ = *d_greyImage;
 }
 

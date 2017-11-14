@@ -35,12 +35,12 @@ int main(int argc, char **argv) {
 	  break;
 	case 3:
 	  input_file  = std::string(argv[1]);
-      output_file = std::string(argv[2]);
+    output_file = std::string(argv[2]);
 	  reference_file = "HW1_reference.png";
 	  break;
 	case 4:
 	  input_file  = std::string(argv[1]);
-      output_file = std::string(argv[2]);
+    output_file = std::string(argv[2]);
 	  reference_file = std::string(argv[3]);
 	  break;
 	case 6:
