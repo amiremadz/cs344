@@ -48,11 +48,13 @@ __global__ void use_shared_memory_GPU(float *array)
     // now, sh_arr is fully populated. Let's find the average of all previous elements
     for (i=0; i<index; i++) { sum += sh_arr[i]; }
     average = sum / (index + 1.0f);
-
+    
     // if array[index] is greater than the average of array[0..index-1], replace with average.
     // since array[] is in global memory, this change will be seen by the host (and potentially 
     // other thread blocks, if any)
     if (array[index] > average) { array[index] = average; }
+
+    __syncthreads();
 
     // the following code has NO EFFECT: it modifies shared memory, but 
     // the resulting modified data is never copied back to global memory
