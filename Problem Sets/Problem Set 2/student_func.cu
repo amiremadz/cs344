@@ -137,14 +137,14 @@ void gaussian_blur(const unsigned char* const inputChannel,
   if((c < numCols) && (r < numRows)){
     int idx = r * numCols + c;
     //printf("%d \n", idx);
-    float result = 0;    
-    for(int filter_r = -filterWidth/2; filter_r <= filterWidth/2; filter_r++){
-      for(int filter_c = -filterWidth/2; filter_c <= filterWidth/2; filter_c++){
+    float result = 0.f;    
+    for(int filter_r = -filterWidth/2; filter_r <= filterWidth/2; ++filter_r){
+      for(int filter_c = -filterWidth/2; filter_c <= filterWidth/2; ++filter_c){
         int filter_idx = (filter_r + filterWidth/2) * filterWidth + filter_c + filterWidth/2; 
         float filter_value = filter[filter_idx];
 
-        int image_r = min( max((c + filter_c), 0), static_cast<int>(numRows - 1) );
-        int image_c = min( max((r + filter_r), 0), static_cast<int>(numCols - 1) );
+        int image_r = min( max((r + filter_r), 0), numRows - 1 );
+        int image_c = min( max((c + filter_c), 0), numCols - 1 );
         
         int image_idx = image_r * numCols + image_c;
         float image_value = static_cast<float>(inputChannel[image_idx]);
@@ -152,7 +152,7 @@ void gaussian_blur(const unsigned char* const inputChannel,
         result += image_value * filter_value;
       }
     }
-    outputChannel[idx] = static_cast<unsigned char>(result);
+    outputChannel[idx] = result;
   }
 }
 
@@ -263,18 +263,18 @@ void your_gaussian_blur(const uchar4 * const h_inputImageRGBA, uchar4 * const d_
                         unsigned char *d_blueBlurred,
                         const int filterWidth)
 {
-  const int DIM = 16;
+  const int DIM = 32;
 
   //TODO: Set reasonable block size (i.e., number of threads per block)
   int x = (numCols + DIM - 1)/DIM;
   int y = (numRows + DIM - 1)/DIM;
   printf("%d %d\n", x, y);
-  const dim3 blockSize(x, y, 1);
+  const dim3 gridSize(x, y, 1);
 
   //TODO:
   //Compute correct grid size (i.e., number of blocks per kernel launch)
   //from the image size and and block size.
-  const dim3 gridSize(DIM, DIM, 1);
+  const dim3 blockSize(DIM, DIM, 1);
 
   //TODO: Launch a kernel for separating the RGBA image into different color channels
   separateChannels<<<gridSize, blockSize>>>(d_inputImageRGBA, numRows, numCols, d_red, d_green, d_blue);
