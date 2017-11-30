@@ -263,14 +263,12 @@ void your_gaussian_blur(const uchar4 * const h_inputImageRGBA, uchar4 * const d_
                         unsigned char *d_blueBlurred,
                         const int filterWidth)
 {
-  const int DIM = 32;
-
   //TODO: Set reasonable block size (i.e., number of threads per block)
+  const int DIM = 32;
   int x = (numCols + DIM - 1)/DIM;
   int y = (numRows + DIM - 1)/DIM;
-  printf("%d %d\n", x, y);
   const dim3 gridSize(x, y, 1);
-
+  
   //TODO:
   //Compute correct grid size (i.e., number of blocks per kernel launch)
   //from the image size and and block size.
