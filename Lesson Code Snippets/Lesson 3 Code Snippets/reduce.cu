@@ -6,9 +6,9 @@ __global__ void global_reduce_kernel(float * d_out, float * d_in)
 {
     int myId = threadIdx.x + blockDim.x * blockIdx.x;
     int tid  = threadIdx.x;
-
+    
     // do reduction in global mem
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1)
+    for (int s = blockDim.x / 2; s > 0; s >>= 1)
     {
         if (tid < s)
         {
@@ -101,13 +101,13 @@ int main(int argc, char **argv)
     if (cudaGetDeviceProperties(&devProps, dev) == 0)
     {
         printf("Using device %d:\n", dev);
-        printf("%s; global mem: %dB; compute v%d.%d; clock: %d kHz\n",
+        printf("%s; global mem: %d B; compute v%d.%d; clock: %d kHz\n",
                devProps.name, (int)devProps.totalGlobalMem, 
                (int)devProps.major, (int)devProps.minor, 
                (int)devProps.clockRate);
     }
 
-    const int ARRAY_SIZE = 1 << 20;
+    const int ARRAY_SIZE = 1 << 10;
     const int ARRAY_BYTES = ARRAY_SIZE * sizeof(float);
 
     // generate the input array on the host
@@ -116,8 +116,12 @@ int main(int argc, char **argv)
     for(int i = 0; i < ARRAY_SIZE; i++) {
         // generate random float in [-1.0f, 1.0f]
         h_in[i] = -1.0f + (float)random()/((float)RAND_MAX/2.0f);
+        //h_in[i] = i;
+        //printf("%f\n", h_in[i]);
         sum += h_in[i];
     }
+
+    printf("sum using serial reduce: %f\n", sum);
 
     // declare GPU memory pointers
     float * d_in, * d_intermediate, * d_out;
@@ -138,13 +142,17 @@ int main(int argc, char **argv)
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
+
+    const int itt = 2;
+
     // launch the kernel
     switch(whichKernel) {
     case 0:
         printf("Running global reduce\n");
         cudaEventRecord(start, 0);
-        for (int i = 0; i < 100; i++)
+        for (int i = 0; i < itt; i++)
         {
+            cudaMemcpy(d_in, h_in, ARRAY_BYTES, cudaMemcpyHostToDevice); 
             reduce(d_out, d_intermediate, d_in, ARRAY_SIZE, false);
         }
         cudaEventRecord(stop, 0);
@@ -152,7 +160,7 @@ int main(int argc, char **argv)
     case 1:
         printf("Running reduce with shared mem\n");
         cudaEventRecord(start, 0);
-        for (int i = 0; i < 100; i++)
+        for (int i = 0; i < itt; i++)
         {
             reduce(d_out, d_intermediate, d_in, ARRAY_SIZE, true);
         }
@@ -165,12 +173,13 @@ int main(int argc, char **argv)
     cudaEventSynchronize(stop);
     float elapsedTime;
     cudaEventElapsedTime(&elapsedTime, start, stop);    
-    elapsedTime /= 100.0f;      // 100 trials
+    elapsedTime /= (float)itt;      // 100 trials
 
     // copy back the sum from GPU
     float h_out;
     cudaMemcpy(&h_out, d_out, sizeof(float), cudaMemcpyDeviceToHost);
 
+    printf("sum using kernel: %f\n", h_out);
     printf("average time elapsed: %f\n", elapsedTime);
 
     // free GPU memory allocation
