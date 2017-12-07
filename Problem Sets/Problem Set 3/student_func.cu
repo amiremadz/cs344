@@ -133,6 +133,19 @@ void maximum(float *d_max_logLum, const float* const d_logLuminance){
     d_max_logLum[blockIdx.x] = smem[0];
   }
 }
+__global__
+void hist(unsigned int* const d_hist, const float* const d_logLuminance, const float min_logLum, const float range, const int numBins, const int size){
+
+  int tid = threadIdx.x + blockIdx.x * blockDim.x;
+
+  if(tid < size){
+    int bin = (numBins * (d_logLuminance[tid] - min_logLum) / range);
+    if(bin == numBins){
+      --bin;
+    }
+    atomicAdd(&(d_hist[bin]), 1);
+  }
+}
 
 void find_min(float *d_min_logLum, float *d_intermediate, const float* const d_logLuminance , const size_t size){
   const int maxThreadsPerBlock = 1024;
@@ -160,9 +173,11 @@ void find_max(float *d_max_logLum, float *d_intermediate, const float* const d_l
   maximum<<<blocks, threads>>>(d_max_logLum, d_intermediate);
 }
 
-__global__
-void hist(unsigned int* const d_hist, const float* const d_logLuminance){
+void find_hist(unsigned int* const d_hist, const float* const d_logLuminance, const float min_logLum, const float range, const int numBins, const int size){
+  int threads = 1024;
+  int blocks = size/threads;
 
+  hist<<<blocks, threads>>>(d_hist, d_logLuminance, min_logLum, range, numBins, size);
 }
 
 __global__
@@ -203,12 +218,15 @@ void your_histogram_and_prefixsum(const float* const d_logLuminance,
 
   unsigned int *d_hist;
 
+  unsigned int *h_hist = (unsigned int *)malloc(sizeof(unsigned int) * numBins);
+
   checkCudaErrors(cudaMalloc(&d_min_logLum, sizeof(float)));
   checkCudaErrors(cudaMalloc(&d_max_logLum,  sizeof(float)));
   
   checkCudaErrors(cudaMalloc(&d_intermediate,  size * sizeof(float)));
   
   checkCudaErrors(cudaMalloc(&d_hist, sizeof(unsigned int) * numBins));
+  checkCudaErrors(cudaMemset(d_hist, 0, sizeof(unsigned int) * numBins));
   
   find_min(d_min_logLum, d_intermediate, d_logLuminance, size);
   find_max(d_max_logLum, d_intermediate, d_logLuminance, size);
@@ -216,9 +234,19 @@ void your_histogram_and_prefixsum(const float* const d_logLuminance,
   checkCudaErrors(cudaMemcpy(&min_logLum, d_min_logLum, sizeof(float), cudaMemcpyDeviceToHost));
   checkCudaErrors(cudaMemcpy(&max_logLum, d_max_logLum, sizeof(float), cudaMemcpyDeviceToHost));
 
-  //range = max_logLum - min_logLum;
+  range = max_logLum - min_logLum;
 
-  //hist<<<blocks, threads>>>(d_logLuminance, d_hist);
+  find_hist(d_hist, d_logLuminance, min_logLum, range, numBins, size);
+  checkCudaErrors(cudaMemcpy(h_hist, d_hist, sizeof(unsigned int) * numBins, cudaMemcpyDeviceToHost));
+
+  /* Check if histogram is correct
+  int sum = 0;
+  for(int i = 0; i < 1024; ++i){
+    sum += h_hist[i];
+    printf("%d ", h_hist[i]);
+  }
+  printf("\nsize: sum: %d %d\n", size, sum);
+  */
 
   //exclusive_sum<<<blocks, threads>>>(d_hist, d_cdf);
 
