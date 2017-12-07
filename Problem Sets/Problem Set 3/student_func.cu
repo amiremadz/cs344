@@ -1,3 +1,5 @@
+#include <stdio.h>
+
 /* Udacity Homework 3
    HDR Tone-mapping
 
@@ -79,6 +81,96 @@
 
 */
 
+__global__
+void minimum(float *d_min_logLum, const float* const d_logLuminance){
+  int tid = threadIdx.x + blockIdx.x * blockDim.x;
+  int tidx = threadIdx.x;
+
+  __shared__
+  float smem[1024];
+
+  smem[tidx] = d_logLuminance[tid];
+  __syncthreads();
+
+  int s = blockDim.x / 2;
+
+  while(s >= 1){
+    if(tidx < s){
+      smem[tidx] = min(smem[tidx] , smem[tidx + s]);
+    }
+    __syncthreads();
+    s >>= 1;
+  }
+
+  if(tidx == 0){
+    d_min_logLum[blockIdx.x] = smem[0];
+  }
+}
+
+
+__global__
+void maximum(float *d_max_logLum, const float* const d_logLuminance){
+  int tid = threadIdx.x + blockIdx.x * blockDim.x;
+  int tidx = threadIdx.x;
+
+  __shared__
+  float smem[1024];
+
+  smem[tidx] = d_logLuminance[tid];
+  __syncthreads();
+
+  int s = blockDim.x / 2;
+  
+  while(s >= 1){
+    if(tidx < s){
+      smem[tidx] = max(smem[tidx], smem[tidx + s]);
+    }
+    __syncthreads();
+    s >>= 1;
+  }
+
+  if(tidx == 0){
+    d_max_logLum[blockIdx.x] = smem[0];
+  }
+}
+
+void find_min(float *d_min_logLum, float *d_intermediate, const float* const d_logLuminance , const size_t size){
+  const int maxThreadsPerBlock = 1024;
+
+  int threads = maxThreadsPerBlock;
+  int blocks = size / maxThreadsPerBlock;
+
+  minimum<<<blocks, threads>>>(d_intermediate, d_logLuminance);
+
+  blocks = 1;
+
+  minimum<<<blocks, threads>>>(d_min_logLum, d_intermediate);
+}
+
+void find_max(float *d_max_logLum, float *d_intermediate, const float* const d_logLuminance, const size_t size){
+  const int maxThreadsPerBlock = 1024;
+  
+  int threads = maxThreadsPerBlock;
+  int blocks = size / maxThreadsPerBlock;
+
+  maximum<<<blocks, threads>>>(d_intermediate, d_logLuminance);
+
+  blocks = 1;
+
+  maximum<<<blocks, threads>>>(d_max_logLum, d_intermediate);
+}
+
+__global__
+void hist(unsigned int* const d_hist, const float* const d_logLuminance){
+
+}
+
+__global__
+void prefix_sum(unsigned int* const d_cdf, const unsigned int* const d_hist){
+
+}
+
+
 #include "utils.h"
 
 void your_histogram_and_prefixsum(const float* const d_logLuminance,
@@ -100,5 +192,37 @@ void your_histogram_and_prefixsum(const float* const d_logLuminance,
        the cumulative distribution of luminance values (this should go in the
        incoming d_cdf pointer which already has been allocated for you)       */
 
+  const size_t size = numRows * numCols;
 
+  float *d_min_logLum;
+  float *d_max_logLum;
+  
+  float range;
+
+  float* d_intermediate;
+
+  unsigned int *d_hist;
+
+  checkCudaErrors(cudaMalloc(&d_min_logLum, sizeof(float)));
+  checkCudaErrors(cudaMalloc(&d_max_logLum,  sizeof(float)));
+  
+  checkCudaErrors(cudaMalloc(&d_intermediate,  size * sizeof(float)));
+  
+  checkCudaErrors(cudaMalloc(&d_hist, sizeof(unsigned int) * numBins));
+  
+  find_min(d_min_logLum, d_intermediate, d_logLuminance, size);
+  find_max(d_max_logLum, d_intermediate, d_logLuminance, size);
+  
+  checkCudaErrors(cudaMemcpy(&min_logLum, d_min_logLum, sizeof(float), cudaMemcpyDeviceToHost));
+  checkCudaErrors(cudaMemcpy(&max_logLum, d_max_logLum, sizeof(float), cudaMemcpyDeviceToHost));
+
+  //range = max_logLum - min_logLum;
+
+  //hist<<<blocks, threads>>>(d_logLuminance, d_hist);
+
+  //exclusive_sum<<<blocks, threads>>>(d_hist, d_cdf);
+
+  
+  checkCudaErrors(cudaFree(d_min_logLum));
+  checkCudaErrors(cudaFree(d_max_logLum));
 }

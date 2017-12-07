@@ -89,6 +89,8 @@ int main(int argc, char **argv) {
   cudaDeviceSynchronize(); checkCudaErrors(cudaGetLastError());
   int err = printf("Your code ran in: %f msecs.\n", timer.Elapsed());
 
+  printf("GPU min: %f, max: %f\n", min_logLum, max_logLum);
+
   if (err < 0) {
     //Couldn't print! Probably the student closed stdout - bad news
     std::cerr << "Couldn't print timing information! STDOUT Closed!" << std::endl;
@@ -104,13 +106,17 @@ int main(int argc, char **argv) {
   postProcess(output_file, numRows, numCols, min_logLum, max_logLum);
 
   for (size_t i = 1; i < numCols * numRows; ++i) {
-	min_logLum = std::min(h_luminance[i], min_logLum);
+	  min_logLum = std::min(h_luminance[i], min_logLum);
     max_logLum = std::max(h_luminance[i], max_logLum);
   }
+
+  printf("CPU min: %f, max: %f\n", min_logLum, max_logLum);
 
   referenceCalculation(h_luminance, h_cdf, numRows, numCols, numBins, min_logLum, max_logLum);
 
   checkCudaErrors(cudaMemcpy(d_cdf, h_cdf, sizeof(unsigned int) * numBins, cudaMemcpyHostToDevice));
+
+  checkCudaErrors(cudaDeviceSynchronize());
 
   //check results and output the tone-mapped image
   postProcess(reference_file, numRows, numCols, min_logLum, max_logLum);
