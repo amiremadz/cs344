@@ -8,6 +8,7 @@ int log2(int i)
     return r;
 }
 
+// 100010 becomes 010001
 int bit_reverse(int w, int bits)
 {
     int r = 0;
@@ -107,9 +108,13 @@ int main(int argc, char **argv)
     // copy back the sum from GPU
     cudaMemcpy(h_bins, d_bins, BIN_BYTES, cudaMemcpyDeviceToHost);
 
+    int sum = 0;
     for(int i = 0; i < BIN_COUNT; i++) {
         printf("bin %d: count %d\n", i, h_bins[i]);
+        sum += h_bins[i];
     }
+
+    printf("sum %d\n", sum);
 
     // free GPU memory allocation
     cudaFree(d_in);
