@@ -101,6 +101,15 @@ int main(int argc, char **argv) {
   unsigned int *h_cdf = (unsigned int *) malloc(sizeof(unsigned int)*numBins);
 
   checkCudaErrors(cudaMemcpy(h_luminance, d_luminance, numRows*numCols*sizeof(float), cudaMemcpyDeviceToHost));
+  
+  /* // make sure GPU computed cdf is correct
+  checkCudaErrors(cudaMemcpy(h_cdf, d_cdf, numBins*sizeof(unsigned int), cudaMemcpyDeviceToHost));
+  printf("\n");
+  for(int i = 0; i < 1024; ++i){
+    printf("%d ", h_cdf[i]);
+  }
+  printf("\n");
+  /*/
 
   //check results and output the tone-mapped image
   postProcess(output_file, numRows, numCols, min_logLum, max_logLum);
@@ -117,7 +126,7 @@ int main(int argc, char **argv) {
   checkCudaErrors(cudaMemcpy(d_cdf, h_cdf, sizeof(unsigned int) * numBins, cudaMemcpyHostToDevice));
 
   checkCudaErrors(cudaDeviceSynchronize());
-
+  
   //check results and output the tone-mapped image
   postProcess(reference_file, numRows, numCols, min_logLum, max_logLum);
 

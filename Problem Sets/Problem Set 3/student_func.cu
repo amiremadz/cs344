@@ -139,11 +139,49 @@ void hist(unsigned int* const d_hist, const float* const d_logLuminance, const f
   int tid = threadIdx.x + blockIdx.x * blockDim.x;
 
   if(tid < size){
-    int bin = (numBins * (d_logLuminance[tid] - min_logLum) / range);
-    if(bin == numBins){
-      --bin;
-    }
+    int bin = min(numBins - 1.0, (numBins * (d_logLuminance[tid] - min_logLum) / range));
+  
     atomicAdd(&(d_hist[bin]), 1);
+  }
+}
+
+__global__
+void hillis_steele(unsigned int* const d_cdf, const unsigned int* const d_hist, int n){
+  int tidx = threadIdx.x;
+
+  if(tidx < n){
+    __shared__
+    unsigned int smem[2 * 1024];
+
+    int head_in = 1;
+    int head_out = 0;
+
+    // right shift input, and store it in shared memory
+    if(tidx == 0){
+      smem[tidx] = 0;
+    }
+    else{
+      smem[head_out * n + tidx] = d_hist[tidx - 1];
+    }
+
+    int offset = 1;
+
+    while(offset < n){
+      // swap buffer indices
+      head_in = 1 - head_in;
+      head_out = 1 - head_in;
+
+      if(tidx < offset){
+        smem[head_out * n + tidx] = smem[head_in * n + tidx];
+      }else{
+        smem[head_out * n + tidx] = smem[head_in * n + tidx] + smem[head_in * n + tidx - offset];
+      }
+      __syncthreads();
+
+      offset <<= 1;
+    }
+
+    d_cdf[tidx] = smem[head_out * n + tidx];
   }
 }
 
@@ -180,9 +218,11 @@ void find_hist(unsigned int* const d_hist, const float* const d_logLuminance, co
   hist<<<blocks, threads>>>(d_hist, d_logLuminance, min_logLum, range, numBins, size);
 }
 
-__global__
-void prefix_sum(unsigned int* const d_cdf, const unsigned int* const d_hist){
-
+void prefix_sum(unsigned int* const d_cdf, const unsigned int* const d_hist, const int numBins){
+  int threads = numBins;
+  int blocks = 1;
+  
+  hillis_steele<<<blocks, threads>>>(d_cdf, d_hist, numBins);
 }
 
 
@@ -239,17 +279,26 @@ void your_histogram_and_prefixsum(const float* const d_logLuminance,
   find_hist(d_hist, d_logLuminance, min_logLum, range, numBins, size);
   checkCudaErrors(cudaMemcpy(h_hist, d_hist, sizeof(unsigned int) * numBins, cudaMemcpyDeviceToHost));
 
-  /* Check if histogram is correct
+  prefix_sum(d_cdf, d_hist, numBins);
+  
+  /* Check cpu results: hist, cdf
   int sum = 0;
   for(int i = 0; i < 1024; ++i){
     sum += h_hist[i];
     printf("%d ", h_hist[i]);
   }
-  printf("\nsize: sum: %d %d\n", size, sum);
+  printf("\nsize: %d, sum: %d\n", size, sum);
+
+  int cdf_cpu[1024] = {0};
+
+  int acc = 0;
+  for(int i = 0; i < 1024; ++i){
+    printf("%d ", acc);
+    cdf_cpu[i] = acc;
+    acc += h_hist[i];
+  }
+  printf("\n");
   */
-
-  //exclusive_sum<<<blocks, threads>>>(d_hist, d_cdf);
-
   
   checkCudaErrors(cudaFree(d_min_logLum));
   checkCudaErrors(cudaFree(d_max_logLum));
