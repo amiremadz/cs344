@@ -83,155 +83,257 @@
 
 __global__
 void minimum(float *d_min_logLum, const float* const d_logLuminance){
-  int tid = threadIdx.x + blockIdx.x * blockDim.x;
-  int tidx = threadIdx.x;
+    int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    int tidx = threadIdx.x;
 
-  __shared__
-  float smem[1024];
+    __shared__
+        float smem[1024];
 
-  smem[tidx] = d_logLuminance[tid];
-  __syncthreads();
-
-  int s = blockDim.x / 2;
-
-  while(s >= 1){
-    if(tidx < s){
-      smem[tidx] = min(smem[tidx] , smem[tidx + s]);
-    }
+    smem[tidx] = d_logLuminance[tid];
     __syncthreads();
-    s >>= 1;
-  }
 
-  if(tidx == 0){
-    d_min_logLum[blockIdx.x] = smem[0];
-  }
+    int s = blockDim.x / 2;
+
+    while(s >= 1){
+        if(tidx < s){
+            smem[tidx] = min(smem[tidx] , smem[tidx + s]);
+        }
+        __syncthreads();
+        s >>= 1;
+    }
+
+    if(tidx == 0){
+        d_min_logLum[blockIdx.x] = smem[0];
+    }
 }
 
 
 __global__
 void maximum(float *d_max_logLum, const float* const d_logLuminance){
-  int tid = threadIdx.x + blockIdx.x * blockDim.x;
-  int tidx = threadIdx.x;
+    int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    int tidx = threadIdx.x;
 
-  __shared__
-  float smem[1024];
+    __shared__
+        float smem[1024];
 
-  smem[tidx] = d_logLuminance[tid];
-  __syncthreads();
-
-  int s = blockDim.x / 2;
-  
-  while(s >= 1){
-    if(tidx < s){
-      smem[tidx] = max(smem[tidx], smem[tidx + s]);
-    }
+    smem[tidx] = d_logLuminance[tid];
     __syncthreads();
-    s >>= 1;
-  }
 
-  if(tidx == 0){
-    d_max_logLum[blockIdx.x] = smem[0];
-  }
+    int s = blockDim.x / 2;
+
+    while(s >= 1){
+        if(tidx < s){
+            smem[tidx] = max(smem[tidx], smem[tidx + s]);
+        }
+        __syncthreads();
+        s >>= 1;
+    }
+
+    if(tidx == 0){
+        d_max_logLum[blockIdx.x] = smem[0];
+    }
 }
 __global__
 void hist(unsigned int* const d_hist, const float* const d_logLuminance, const float min_logLum, const float range, const int numBins, const int size){
 
-  int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    int tid = threadIdx.x + blockIdx.x * blockDim.x;
 
-  if(tid < size){
-    int bin = min(numBins - 1.0, (numBins * (d_logLuminance[tid] - min_logLum) / range));
-  
-    atomicAdd(&(d_hist[bin]), 1);
-  }
+    if(tid < size){
+        int bin = min(numBins - 1.0, (numBins * (d_logLuminance[tid] - min_logLum) / range));
+
+        atomicAdd(&(d_hist[bin]), 1);
+    }
 }
 
 __global__
 void hillis_steele(unsigned int* const d_cdf, const unsigned int* const d_hist, int n){
-  int tidx = threadIdx.x;
+    int tidx = threadIdx.x;
 
-  if(tidx < n){
-    __shared__
-    unsigned int smem[2 * 1024];
+    if(tidx < n){
+        __shared__
+            unsigned int smem[2 * 1024];
 
-    int head_in = 1;
-    int head_out = 0;
+        int head_in = 1;
+        int head_out = 0;
 
-    // right shift input, and store it in shared memory
-    if(tidx == 0){
-      smem[tidx] = 0;
+        // right shift input, and store it in shared memory
+        if(tidx == 0){
+            smem[tidx] = 0;
+        }
+        else{
+            smem[head_out * n + tidx] = d_hist[tidx - 1];
+        }
+
+        int offset = 1;
+
+        while(offset < n){
+            // swap buffer indices
+            head_in = 1 - head_in;
+            head_out = 1 - head_in;
+
+            if(tidx < offset){
+                smem[head_out * n + tidx] = smem[head_in * n + tidx];
+            }else{
+                smem[head_out * n + tidx] = smem[head_in * n + tidx] + smem[head_in * n + tidx - offset];
+            }
+            __syncthreads();
+
+            offset <<= 1;
+        }
+
+        d_cdf[tidx] = smem[head_out * n + tidx];
     }
-    else{
-      smem[head_out * n + tidx] = d_hist[tidx - 1];
-    }
-
-    int offset = 1;
-
-    while(offset < n){
-      // swap buffer indices
-      head_in = 1 - head_in;
-      head_out = 1 - head_in;
-
-      if(tidx < offset){
-        smem[head_out * n + tidx] = smem[head_in * n + tidx];
-      }else{
-        smem[head_out * n + tidx] = smem[head_in * n + tidx] + smem[head_in * n + tidx - offset];
-      }
-      __syncthreads();
-
-      offset <<= 1;
-    }
-
-    d_cdf[tidx] = smem[head_out * n + tidx];
-  }
 }
 
-
+//uses 1024 threads
 __global__
-void blelloch(unsigned int* const d_cdf, const unsigned int* const d_hist, int n){
+void blelloch1(unsigned int* const d_cdf, const unsigned int* const d_hist, int n){
+    int tidx = threadIdx.x;
+
+    if(tidx < n){
+        int offset = 1;
+
+        __shared__
+            int smem[1024];
+
+        smem[tidx] =  d_hist[tidx];
+        __syncthreads();
+
+        while(offset < n){
+            bool condition = ((tidx + 1) % (2 * offset)) == 0;
+            
+            if(condition){
+                smem[tidx] += smem[tidx - offset];
+            }    
+            __syncthreads();
+
+            offset <<= 1;
+        }
+
+        if(tidx == n - 1){
+            smem[tidx] = 0;
+        }
+        __syncthreads();
+
+        offset = n >> 1;
+
+        while(offset >= 1){
+            bool condition = ((tidx + 1) % (2 * offset)) == 0;
+            if(condition){
+                int temp = smem[tidx - offset];
+                smem[tidx - offset] = smem[tidx];
+                smem[tidx] += temp;
+            }
+            __syncthreads();
+            offset >>= 1;
+        }
+
+        d_cdf[tidx] = smem[tidx];
+    }
+}
+
+// uses 512 threads
+__global__
+void blelloch2(unsigned int* const d_cdf, const unsigned int* const d_hist, int n){
+    int tidx = threadIdx.x;
+    int idx = 2 * tidx + 1;
+
+    if(idx < n){
+        int offset = 1;
+
+        __shared__
+            int smem[1024];
+
+        smem[idx]     =  d_hist[idx];
+        smem[idx - 1] =  d_hist[idx - 1];
+        __syncthreads();
+
+        while(offset < n){
+            bool condition = ((idx + 1) % (2 * offset)) == 0;
+
+            if(condition){
+                smem[idx] += smem[idx - offset];
+            }    
+            __syncthreads();
+
+            offset <<= 1;
+        }
+
+        if(idx == n - 1){
+            smem[idx] = 0;
+        }
+        __syncthreads();
+
+        offset = n >> 1;
+
+        while(offset >= 1){
+            bool condition = ((idx + 1) % (2 * offset)) == 0;
+            if(condition){
+                int temp = smem[idx - offset];
+                smem[idx - offset] = smem[idx];
+                smem[idx] += temp;
+            }
+            __syncthreads();
+            offset >>= 1;
+        }
+
+        d_cdf[idx]     = smem[idx];
+        d_cdf[idx - 1] = smem[idx - 1];
+    }
+}
+
+// Parallel Prefix sum: Mark Harris
+// uses 512 threads
+__global__
+void blelloch3(unsigned int* const d_cdf, const unsigned int* const d_hist, const int n){
   int tidx = threadIdx.x;
-
-  if(tidx < n){
-    int offset = 1;
-
+    
+  if(tidx < n/2){
     __shared__
     int smem[1024];
-
-    smem[tidx] =  d_hist[tidx];
+     
+    smem[ 2 * tidx ]     =  d_hist[ 2 * tidx ];
+    smem[ 2 * tidx + 1 ] =  d_hist[ 2 * tidx + 1 ];
     __syncthreads();
 
-    while(offset < n){
-      bool condition = ((tidx + 1) % (2 * offset)) == 0;
-      
-      if(condition){
-        smem[tidx] += smem[tidx - offset];
-      }    
-      __syncthreads();
+    int d = n >> 1;
+    int offset = 1;
+    
+    while(d > 0){
+        if(tidx < d){
+            int idx = offset * (2 * tidx + 2) - 1;
+            smem[idx] += smem[idx - offset];
+        }
+        __syncthreads();
 
-      offset <<= 1;
+        offset <<= 1;
+        d >>= 1;
     }
 
-    if(tidx == n - 1){
-      smem[tidx] = 0;
+    if(tidx == 0){
+      smem[n - 1] = 0;
     }
     __syncthreads();
 
     offset = n >> 1;
+    d = 1;
 
-    while(offset >= 1){
-      bool condition = ((tidx + 1) % (2 * offset)) == 0;
-      if(condition){
-          int temp = smem[tidx - offset];
-          smem[tidx - offset] = smem[tidx];
-          smem[tidx] += temp;
-      }
-      __syncthreads();
-      offset >>= 1;
+    while(d < n){
+        if(tidx < d){
+            int idx = offset * (2 * tidx + 2) - 1;
+            int temp = smem[idx - offset];
+            smem[idx - offset] = smem[idx];
+            smem[idx] += temp;
+        }
+        __syncthreads();
+        offset >>= 1;
+        d <<= 1;
     }
-    
-    d_cdf[tidx] = smem[tidx];
+
+    d_cdf[2 * tidx]     = smem[2 * tidx];
+    d_cdf[2 * tidx + 1] = smem[2 * tidx + 1];     
   }
 }
-
 
 void find_min(float *d_min_logLum, float *d_intermediate, const float* const d_logLuminance , const size_t size){
   const int maxThreadsPerBlock = 1024;
@@ -271,8 +373,9 @@ void prefix_sum(unsigned int* const d_cdf, const unsigned int* const d_hist, con
   int blocks = 1;
   
   //hillis_steele<<<blocks, threads>>>(d_cdf, d_hist, numBins);
-  blelloch<<<blocks, threads>>>(d_cdf, d_hist, numBins);
-
+  //blelloch1<<<blocks, threads/2>>>(d_cdf, d_hist, numBins);
+  blelloch2<<<blocks, threads/2>>>(d_cdf, d_hist, numBins);
+  //blelloch3<<<blocks, threads/2>>>(d_cdf, d_hist, numBins);
 }
 
 
