@@ -185,6 +185,54 @@ void hillis_steele(unsigned int* const d_cdf, const unsigned int* const d_hist, 
   }
 }
 
+
+__global__
+void blelloch(unsigned int* const d_cdf, const unsigned int* const d_hist, int n){
+  int tidx = threadIdx.x;
+
+  if(tidx < n){
+    int offset = 1;
+
+    __shared__
+    int smem[1024];
+
+    smem[tidx] =  d_hist[tidx];
+    __syncthreads();
+
+    while(offset < n){
+      bool condition = ((tidx + 1) % (2 * offset)) == 0;
+      
+      if(condition){
+        smem[tidx] += smem[tidx - offset];
+      }    
+      __syncthreads();
+
+      offset <<= 1;
+    }
+
+    if(tidx == n - 1){
+      smem[tidx] = 0;
+    }
+    __syncthreads();
+
+    offset = n >> 1;
+
+    while(offset >= 1){
+      bool condition = ((tidx + 1) % (2 * offset)) == 0;
+      if(condition){
+          int temp = smem[tidx - offset];
+          smem[tidx - offset] = smem[tidx];
+          smem[tidx] += temp;
+      }
+      __syncthreads();
+      offset >>= 1;
+    }
+    
+    d_cdf[tidx] = smem[tidx];
+  }
+}
+
+
 void find_min(float *d_min_logLum, float *d_intermediate, const float* const d_logLuminance , const size_t size){
   const int maxThreadsPerBlock = 1024;
 
@@ -222,7 +270,9 @@ void prefix_sum(unsigned int* const d_cdf, const unsigned int* const d_hist, con
   int threads = numBins;
   int blocks = 1;
   
-  hillis_steele<<<blocks, threads>>>(d_cdf, d_hist, numBins);
+  //hillis_steele<<<blocks, threads>>>(d_cdf, d_hist, numBins);
+  blelloch<<<blocks, threads>>>(d_cdf, d_hist, numBins);
+
 }
 
 

@@ -109,7 +109,7 @@ int main(int argc, char **argv) {
     printf("%d ", h_cdf[i]);
   }
   printf("\n");
-  /*/
+  */
 
   //check results and output the tone-mapped image
   postProcess(output_file, numRows, numCols, min_logLum, max_logLum);
